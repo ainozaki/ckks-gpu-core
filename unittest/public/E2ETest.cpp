@@ -65,5 +65,29 @@ TEST_P(E2ETest, Encode) {
   COMPARE_APPROXIMATE(mvec_ref, mvec_decoded, slots);
 }
 
+TEST_P(E2ETest, Encrypt){
+  int slots = 8;
+  std::complex<double> *mvec = new std::complex<double>[slots];
+  std::complex<double> *mvec_ref = new std::complex<double>[slots];
+  
+  for (int i = 0; i < slots; i++) {
+    mvec[i] = std::complex<double>(i, i);
+    mvec_ref[i] = std::complex<double>(i, i);
+  }
+
+  // encrypt and encode
+  context.AddSecretkey();
+  context.AddEncryptionKey();
+  ckks::Ciphertext ct0 = context.Encrypt(mvec, slots);
+  
+  // some operations
+
+  // decrypt and decode
+  std::complex<double> *mvec_decoded = context.Decrypt(ct0, slots);
+
+  COMPARE_APPROXIMATE(mvec_ref, mvec_decoded, slots);
+}
+
+
 INSTANTIATE_TEST_SUITE_P(Params, E2ETest,
                          ::testing::Values(PARAM_LARGE_DNUM, PARAM_SMALL_DNUM));

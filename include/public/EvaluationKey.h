@@ -8,11 +8,23 @@
 
 #include <tuple>
 
+#include "Context.h"
 #include "Define.h"
 #include "DeviceVector.h"
 #include "Parameter.h"
 
 namespace ckks {
+
+class SecretKey {
+public:
+	uint64_t* sx;
+};
+
+class EncryptionKey {
+public:
+  uint64_t *ax;
+  uint64_t *bx;
+};
 
 class EvaluationKey {
  public:
