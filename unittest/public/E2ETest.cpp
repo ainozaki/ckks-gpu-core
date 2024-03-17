@@ -28,11 +28,21 @@ class E2ETest : public ckks::Test,
     ASSERT_EQ(ckks::HostVector(ref), ckks::HostVector(out));
   }
 
+  void COMPARE(const ckks::HostVector& ref, const ckks::HostVector& out) const {
+    ASSERT_EQ(ref, out);
+  }
+
   void COMPARE_APPROXIMATE(std::complex<double> *ref,
                            std::complex<double> *out, int size) const {
     for (size_t i = 0; i < size; i++) {
       ASSERT_NEAR(ref[i].real(), out[i].real(), 1e-3);
       ASSERT_NEAR(ref[i].imag(), out[i].imag(), 1e-3);
+    }
+  }
+
+  void COMPARE(const uint64_t *ref, const uint64_t *out, int size) const {
+    for (size_t i = 0; i < size; i++) {
+      ASSERT_EQ(ref[i], out[i]);
     }
   }
 
@@ -86,6 +96,26 @@ TEST_P(E2ETest, Encrypt){
   std::complex<double> *mvec_decoded = context.Decrypt(ct0, slots);
 
   COMPARE_APPROXIMATE(mvec_ref, mvec_decoded, slots);
+}
+
+TEST_P(E2ETest, NTT){
+  int n = 16;
+  ckks::HostVector a(n);
+  ckks::HostVector a_ref(n);
+  for (int i = 0; i < n; i++){
+    a[i] = i;
+    a_ref[i] = i;
+  }
+  context.setDegreeFotTest(n);
+  context.ToNTTHost(a, 1);
+  context.FromNTTHost(a, 1);
+
+  for (int i = 0; i < n; i++){
+    std::cout << a[i] << " ";
+  }
+  std::cout << std::endl;
+
+  COMPARE(a, a_ref);
 }
 
 

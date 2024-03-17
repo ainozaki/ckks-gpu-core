@@ -17,13 +17,13 @@ namespace ckks {
 
 class SecretKey {
 public:
-	uint64_t* sx;
+	HostVector sx;
 };
 
 class EncryptionKey {
 public:
-  uint64_t *ax;
-  uint64_t *bx;
+  HostVector ax;
+  HostVector bx;
 };
 
 class EvaluationKey {

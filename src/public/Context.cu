@@ -246,10 +246,11 @@ Context::Context(const Parameter &param)
     Append(inv_power_of_roots_vec, inv_power_of_roots_div_two);
     Append(inv_power_of_roots_shoup_vec, inv_power_of_roots_shoup);
   }
+  power_of_roots_host__ = power_of_roots_vec;
+  inv_power_of_roots_host__ = inv_power_of_roots_vec;
   barret_ratio__ = DeviceVector(barret_ratio);
   barret_k__ = DeviceVector(barret_k);
   power_of_roots__ = DeviceVector(power_of_roots_vec);
-  power_of_roots_host__ = power_of_roots_vec;
   power_of_roots_shoup__ = DeviceVector(power_of_roots_shoup_vec);
   inverse_power_of_roots_div_two__ = DeviceVector(inv_power_of_roots_vec);
   inverse_scaled_power_of_roots_div_two__ =
@@ -266,14 +267,14 @@ void Context::GenEncodeParams(){
   int Nh = degree__ >> 1;
   int M = degree__ << 1;
 
-  rotGroup = new uint64_t[Nh];
+  rotGroup = HostVector(Nh);
   uint64_t fivePows = 1;
   for (int i = 0; i < Nh; i++) {
     rotGroup[i] = fivePows;
     fivePows = (fivePows * 5) % (degree__ << 1);
   }
 
-  ksiPows = new std::complex<double>[M + 1];
+  ksiPows = new std::complex<double>[M + 1]();
   for (int i = 0; i < M; i++) {
     double theta = 2 * M_PI * i / M;
     ksiPows[i] = std::complex<double>(cos(theta), sin(theta));
@@ -343,6 +344,22 @@ void Context::arrayBitReverse(std::complex<double>* vals, const long size) const
 		}
 	}
 }
+
+void bit_reversal(int n, uint64_t *res) {
+    for (int i = 0; i < n; i++) {
+        res[i] = 0;
+    }
+
+    uint64_t d = n / 2;
+    for (int u = 1; u < n; u <<= 1) {
+        for (int k = 0; k < u; k++) {
+						std::cout << "(k,u)=(" << k << "," << u << ")" << "res[k]=" << res[k] << ", d=" << d << std::endl;
+            res[k | u] = res[k] | d;
+        }
+        d >>= 1;
+    }
+}
+
 
 // https://github.com/KyoohyungHan/FullRNS-HEAAN.git
 void Context::fftSpecial(std::complex<double> *vals, const long size) const{
@@ -462,34 +479,19 @@ uint64_t pow(uint64_t x, uint64_t y) {
 	return res;
 }
 
-void Context::qiNTTAndEqual(uint64_t* a, long index) const{
-  int t = degree__;
-  uint64_t p = param__.primes_[index];
-  int j1, j2;
-  for (int m = 1; m < degree__; m <<= 1) {
-      t >>= 1;
-      for (int i = 0; i < m; i++) {
-          j1 = 2 * i * t;
-          j2 = j1 + t - 1;
-          for (int j = j1; j <= j2; j++) {
-              uint64_t root = power_of_roots_host__[m + i];
-              uint64_t v0 = a[j];
-              uint64_t v1 = (a[j + t] * root) % p;
-              a[j] = (v0 + v1) % p;
-              a[j + t] = (v0 - v1 + p) % p;
-          }
-      }
-  }
+void Context::ToNTTHost(HostVector &a, long l)const {
+  DeviceVector a_d(a);
+  ToNTTInplace(a_d.data(), 0, l);
+  a = HostVector(a_d);
 }
 
-void Context::NTTAndEqual(uint64_t* a, long l) const {
-	for (long index = 0; index < l; ++index) {
-		uint64_t* ai = a + (index << param__.log_degree_);
-		qiNTTAndEqual(ai, index);
-	}
+void Context::FromNTTHost(HostVector &a, long l)const {
+  DeviceVector a_d(a);
+  FromNTTInplace(a_d.data(), 0, l);
+  a = HostVector(a_d);
 }
 
-void Context::add(uint64_t *res, const uint64_t *a, const uint64_t *b, const long l) const{
+void Context::add(HostVector &res, const HostVector &a, const HostVector &b, const long l) const{
   for (long i = 0; i < l; i++){
     uint64_t p = param__.primes_[i];
     for (long j = 0; j < degree__; j++){
@@ -498,7 +500,7 @@ void Context::add(uint64_t *res, const uint64_t *a, const uint64_t *b, const lon
   }
 } 
 
-void Context::sub(uint64_t *res, const uint64_t *a, const uint64_t *b, const long l) const{
+void Context::sub(HostVector &res, const HostVector &a, const HostVector &b, const long l) const{
   for (long i = 0; i < l; i++){
     uint64_t p = param__.primes_[i];
     for (long j = 0; j < degree__; j++){
@@ -507,7 +509,7 @@ void Context::sub(uint64_t *res, const uint64_t *a, const uint64_t *b, const lon
   }
 }
 
-void Context::mul(uint64_t *res, const uint64_t *a, const uint64_t *b, const long l) const{
+void Context::mul(HostVector &res, const HostVector &a, const HostVector &b, const long l) const{
   for (long i = 0; i < l; i++){
     uint64_t p = param__.primes_[i];
     for (long j = 0; j < degree__; j++){
@@ -517,25 +519,23 @@ void Context::mul(uint64_t *res, const uint64_t *a, const uint64_t *b, const lon
 }
 
 void Context::AddSecretkey(){
-  secret_key__.sx = new uint64_t[(param__.chain_length_ + param__.num_special_moduli_)<< param__.log_degree_];
-  sampleHWT(secret_key__.sx, param__.chain_length_ + param__.num_special_moduli_);
-  NTTAndEqual(secret_key__.sx, param__.chain_length_ + param__.num_special_moduli_);
+  secret_key__.sx = HostVector((param__.chain_length_ + param__.num_special_moduli_)<< param__.log_degree_);
+  sampleHWT(secret_key__.sx.data(), param__.chain_length_ + param__.num_special_moduli_);
+  ToNTTHost(secret_key__.sx, param__.chain_length_ + param__.num_special_moduli_);
 }
 
 void Context::AddEncryptionKey(){
-  encryption_key__.ax = new uint64_t[param__.chain_length_ << param__.log_degree_];
-  encryption_key__.bx = new uint64_t[param__.chain_length_ << param__.log_degree_];
-  uint64_t *ex = new uint64_t[param__.chain_length_ << param__.log_degree_];
+  encryption_key__.ax = HostVector(param__.chain_length_ << param__.log_degree_);
+  encryption_key__.bx = HostVector(param__.chain_length_ << param__.log_degree_);
+  HostVector ex = HostVector(param__.chain_length_ << param__.log_degree_);
 
-  sampleUniform(encryption_key__.ax, param__.chain_length_);
+  sampleUniform(encryption_key__.ax.data(), param__.chain_length_);
 
-  sampleGauss(ex, param__.chain_length_);
-  NTTAndEqual(ex, param__.chain_length_);
+  sampleGauss(ex.data(), param__.chain_length_);
+  ToNTTHost(ex, param__.chain_length_);
 
   mul(encryption_key__.bx, encryption_key__.ax, secret_key__.sx, param__.chain_length_);
   sub(encryption_key__.bx, ex, encryption_key__.bx, param__.chain_length_);
-
-  delete [] ex;
 }
 
 // https://github.com/KyoohyungHan/FullRNS-HEAAN.git
@@ -596,23 +596,23 @@ Ciphertext Context::Encrypt(std::complex<double> *mvec, const int slot){
   HostVector vx(param__.chain_length_ << param__.log_degree_);
   HostVector ex(param__.chain_length_ << param__.log_degree_);
   sampleZO(vx.data(), param__.chain_length_);
-  NTTAndEqual(vx.data(), param__.chain_length_);
+  ToNTTHost(vx, param__.chain_length_);
 
-  mul(ax.data(), vx.data(), encryption_key__.ax, param__.chain_length_);
-
-  sampleGauss(ex.data(), param__.chain_length_);
-  NTTAndEqual(ex.data(), param__.chain_length_);
-
-  add(ax.data(), ax.data(), ex.data(), param__.chain_length_);
-
-  mul(bx.data(), vx.data(), encryption_key__.bx, param__.chain_length_);
+  mul(ax, vx, encryption_key__.ax, param__.chain_length_);
 
   sampleGauss(ex.data(), param__.chain_length_);
-  NTTAndEqual(ex.data(), param__.chain_length_);
+  ToNTTHost(ex, param__.chain_length_);
 
-  NTTAndEqual(pt.data(), param__.chain_length_);
-  add(bx.data(), pt.data(), bx.data(), param__.chain_length_);
-  add(bx.data(), bx.data(), ex.data(), param__.chain_length_); 
+  add(ax, ax, ex, param__.chain_length_);
+
+  mul(bx, vx, encryption_key__.bx, param__.chain_length_);
+
+  sampleGauss(ex.data(), param__.chain_length_);
+  ToNTTHost(ex, param__.chain_length_);
+
+  ToNTTHost(pt, param__.chain_length_);
+  add(bx, pt, bx, param__.chain_length_);
+  add(bx, bx, ex, param__.chain_length_); 
 
   // Copy to device
   Ciphertext c;
@@ -631,15 +631,15 @@ std::complex<double> *Context::Decrypt(const Ciphertext& c, const int slot) cons
   HostVector bx(c.getBxDevice());
 
   // Decrypt
-  uint64_t *plaintext = new uint64_t[param__.chain_length_ << param__.log_degree_];
-  mul(plaintext, ax.data(), secret_key__.sx, 1);
-  add(plaintext, plaintext, bx.data(), 1);
+  HostVector plaintext(degree__);
+  mul(plaintext, ax, secret_key__.sx, 1);
+  add(plaintext, plaintext, bx, 1);
+  FromNTTHost(plaintext, 1);
 
   // Decode
-  std::complex<double> *mvec = new std::complex<double>[slot];
-  Decode(mvec, plaintext, slot);
+  std::complex<double> *mvec = new std::complex<double>[slot]();
+  Decode(mvec, plaintext.data(), slot);
 
-  delete [] plaintext;
   return mvec;
 }
 

@@ -53,6 +53,10 @@ class Context {
   bool is_modup_batched = true;
   bool is_moddown_fused = true;
   bool is_keyswitch_fused = true;
+  
+  void setDegreeFotTest(int degree) { degree__ = degree; }
+  void FromNTTHost(HostVector &a, long l) const;
+  void ToNTTHost(HostVector &a, long l) const;
 
  private:
   DeviceVector FromNTT(const DeviceVector& from) const;
@@ -104,11 +108,9 @@ class Context {
   void sampleGauss(uint64_t* res, long l) const;
   void sampleHWT(uint64_t* res, long l) const;
   void sampleUniform(uint64_t* res, long l) const;
-  void NTTAndEqual(uint64_t* a, long l) const;
-  void qiNTTAndEqual(uint64_t* a, long index) const;
-  void add(uint64_t *res, const uint64_t *a, const uint64_t *b, const long l) const;
-  void sub(uint64_t *res, const uint64_t *a, const uint64_t *b, const long l) const;
-  void mul(uint64_t *res, const uint64_t *a, const uint64_t *b, const long l) const;
+  void add(HostVector &res, const HostVector &a, const HostVector &b, const long l) const;
+  void sub(HostVector &res, const HostVector &a, const HostVector &b, const long l) const;
+  void mul(HostVector &res, const HostVector &a, const HostVector &b, const long l) const;
 
   std::shared_ptr<MemoryPool> pool__;
   int degree__;
@@ -139,9 +141,10 @@ class Context {
   std::vector<DeviceVector> prod_inv_shoup_moddown__;
 
   // For en/decode
-  uint64_t *rotGroup;
   std::complex<double> *ksiPows;
+  HostVector rotGroup;
   HostVector power_of_roots_host__;
+  HostVector inv_power_of_roots_host__;
   SecretKey secret_key__;
   EncryptionKey encryption_key__;
 };
