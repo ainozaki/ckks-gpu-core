@@ -482,13 +482,13 @@ uint64_t pow(uint64_t x, uint64_t y) {
 void Context::ToNTTHost(HostVector &a, long l)const {
   DeviceVector a_d(a);
   ToNTTInplace(a_d.data(), 0, l);
-  a = HostVector(a_d);
+  a_d.copyTo(a);
 }
 
 void Context::FromNTTHost(HostVector &a, long l)const {
   DeviceVector a_d(a);
   FromNTTInplace(a_d.data(), 0, l);
-  a = HostVector(a_d);
+  a_d.copyTo(a);
 }
 
 void Context::add(HostVector &res, const HostVector &a, const HostVector &b, const long l) const{

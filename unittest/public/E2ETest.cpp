@@ -98,22 +98,18 @@ TEST_P(E2ETest, Encrypt){
   COMPARE_APPROXIMATE(mvec_ref, mvec_decoded, slots);
 }
 
-TEST_P(E2ETest, NTT){
-  int n = 16;
+TEST_P(E2ETest, NTTHost){
+  int n = param.chain_length_ << param.log_degree_;
   ckks::HostVector a(n);
   ckks::HostVector a_ref(n);
-  for (int i = 0; i < n; i++){
-    a[i] = i;
-    a_ref[i] = i;
+  for (int i = 0; i < param.chain_length_; i++){
+    for (int j = 0; j < param.degree_; j++){
+      a[i * param.degree_ + j] = j;
+      a_ref[i * param.degree_ + j] = j;
+    }
   }
-  context.setDegreeFotTest(n);
-  context.ToNTTHost(a, 1);
-  context.FromNTTHost(a, 1);
-
-  for (int i = 0; i < n; i++){
-    std::cout << a[i] << " ";
-  }
-  std::cout << std::endl;
+  context.ToNTTHost(a, param.chain_length_);
+  context.FromNTTHost(a, param.chain_length_);
 
   COMPARE(a, a_ref);
 }

@@ -50,13 +50,12 @@ class Context {
   auto GetDegree() const { return degree__; }
   void ModDown(DeviceVector& from, DeviceVector& to,
                long target_chain_idx) const;
+  void FromNTTHost(HostVector &a, long l) const;
+  void ToNTTHost(HostVector &a, long l) const;
+  
   bool is_modup_batched = true;
   bool is_moddown_fused = true;
   bool is_keyswitch_fused = true;
-  
-  void setDegreeFotTest(int degree) { degree__ = degree; }
-  void FromNTTHost(HostVector &a, long l) const;
-  void ToNTTHost(HostVector &a, long l) const;
 
  private:
   DeviceVector FromNTT(const DeviceVector& from) const;
