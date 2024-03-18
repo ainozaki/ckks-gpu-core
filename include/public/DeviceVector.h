@@ -50,6 +50,12 @@ class DeviceVector : public rmm::device_uvector<word64> {
     return host;
   }
 
+  void copyTo(HostVector& host) const {
+    host.resize(size());
+    cudaMemcpyAsync(host.data(), data(), size() * sizeof(Dtype),
+                    cudaMemcpyDeviceToHost, stream_);
+  }
+
   void resize(int size) { Base::resize(size, stream_); }
 
   bool operator==(const DeviceVector& other) const{

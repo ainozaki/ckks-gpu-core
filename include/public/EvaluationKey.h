@@ -14,6 +14,17 @@
 
 namespace ckks {
 
+class SecretKey {
+public:
+	HostVector sx;
+};
+
+class EncryptionKey {
+public:
+  HostVector ax;
+  HostVector bx;
+};
+
 class EvaluationKey {
  public:
   EvaluationKey() = default;

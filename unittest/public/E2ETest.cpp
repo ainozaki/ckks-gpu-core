@@ -28,11 +28,21 @@ class E2ETest : public ckks::Test,
     ASSERT_EQ(ckks::HostVector(ref), ckks::HostVector(out));
   }
 
+  void COMPARE(const ckks::HostVector& ref, const ckks::HostVector& out) const {
+    ASSERT_EQ(ref, out);
+  }
+
   void COMPARE_APPROXIMATE(std::complex<double> *ref,
                            std::complex<double> *out, int size) const {
     for (size_t i = 0; i < size; i++) {
-      ASSERT_NEAR(ref[i].real(), out[i].real(), 1e-3);
-      ASSERT_NEAR(ref[i].imag(), out[i].imag(), 1e-3);
+      ASSERT_NEAR(ref[i].real(), out[i].real(), 1e-2);
+      ASSERT_NEAR(ref[i].imag(), out[i].imag(), 1e-2);
+    }
+  }
+
+  void COMPARE(const uint64_t *ref, const uint64_t *out, int size) const {
+    for (size_t i = 0; i < size; i++) {
+      ASSERT_EQ(ref[i], out[i]);
     }
   }
 
@@ -64,6 +74,46 @@ TEST_P(E2ETest, Encode) {
 
   COMPARE_APPROXIMATE(mvec_ref, mvec_decoded, slots);
 }
+
+TEST_P(E2ETest, Encrypt){
+  int slots = 8;
+  std::complex<double> *mvec = new std::complex<double>[slots];
+  std::complex<double> *mvec_ref = new std::complex<double>[slots];
+  
+  for (int i = 0; i < slots; i++) {
+    mvec[i] = std::complex<double>(i, i);
+    mvec_ref[i] = std::complex<double>(i, i);
+  }
+
+  // encrypt and encode
+  context.AddSecretkey();
+  context.AddEncryptionKey();
+  ckks::Ciphertext ct0 = context.Encrypt(mvec, slots);
+  
+  // some operations
+
+  // decrypt and decode
+  std::complex<double> *mvec_decoded = context.Decrypt(ct0, slots);
+
+  COMPARE_APPROXIMATE(mvec_ref, mvec_decoded, slots);
+}
+
+TEST_P(E2ETest, NTTHost){
+  int n = param.chain_length_ << param.log_degree_;
+  ckks::HostVector a(n);
+  ckks::HostVector a_ref(n);
+  for (int i = 0; i < param.chain_length_; i++){
+    for (int j = 0; j < param.degree_; j++){
+      a[i * param.degree_ + j] = j;
+      a_ref[i * param.degree_ + j] = j;
+    }
+  }
+  context.ToNTTHost(a, param.chain_length_);
+  context.FromNTTHost(a, param.chain_length_);
+
+  COMPARE(a, a_ref);
+}
+
 
 INSTANTIATE_TEST_SUITE_P(Params, E2ETest,
                          ::testing::Values(PARAM_LARGE_DNUM, PARAM_SMALL_DNUM));

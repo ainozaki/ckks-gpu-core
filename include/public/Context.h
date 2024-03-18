@@ -11,6 +11,7 @@
 
 #include "Define.h"
 #include "DeviceVector.h"
+#include "EvaluationKey.h"
 #include "Parameter.h"
 namespace ckks {
 
@@ -34,6 +35,12 @@ class Context {
   Context(const Parameter& param);
   void Encode(uint64_t *out, std::complex<double> *mvec, const int slot) const;
   void Decode(std::complex<double> *out, uint64_t *v, const int slot) const;
+  void AddSecretkey();
+  void AddEncryptionKey();
+
+  Ciphertext Encrypt(std::complex<double> *mvec, const int slot);
+  std::complex<double> *Decrypt(const Ciphertext& c, const int slot) const;
+
   void KeySwitch(const DeviceVector& modup_out, const EvaluationKey& evk,
                  DeviceVector& sum_ax, DeviceVector& sum_bx) const;
   void PMult(const Ciphertext&, const Plaintext&, Ciphertext&) const;
@@ -43,6 +50,9 @@ class Context {
   auto GetDegree() const { return degree__; }
   void ModDown(DeviceVector& from, DeviceVector& to,
                long target_chain_idx) const;
+  void FromNTTHost(HostVector &a, long l) const;
+  void ToNTTHost(HostVector &a, long l) const;
+  
   bool is_modup_batched = true;
   bool is_moddown_fused = true;
   bool is_keyswitch_fused = true;
@@ -88,9 +98,18 @@ class Context {
   void GenModUpParams();
   void GenModDownParams();
   void GenEncodeParams();
+
+  // for client side
   void fftSpecial(std::complex<double> *vals, const long size) const;
   void fftSpecialInv(std::complex<double> *vals, const long size) const;
   void arrayBitReverse(std::complex<double> *vals, const long size) const;
+  void sampleZO(uint64_t* res, long l) const;
+  void sampleGauss(uint64_t* res, long l) const;
+  void sampleHWT(uint64_t* res, long l) const;
+  void sampleUniform(uint64_t* res, long l) const;
+  void add(HostVector &res, const HostVector &a, const HostVector &b, const long l) const;
+  void sub(HostVector &res, const HostVector &a, const HostVector &b, const long l) const;
+  void mul(HostVector &res, const HostVector &a, const HostVector &b, const long l) const;
 
   std::shared_ptr<MemoryPool> pool__;
   int degree__;
@@ -121,8 +140,12 @@ class Context {
   std::vector<DeviceVector> prod_inv_shoup_moddown__;
 
   // For en/decode
-  uint64_t *rotGroup;
   std::complex<double> *ksiPows;
+  HostVector rotGroup;
+  HostVector power_of_roots_host__;
+  HostVector inv_power_of_roots_host__;
+  SecretKey secret_key__;
+  EncryptionKey encryption_key__;
 };
 
 }  // namespace ckks

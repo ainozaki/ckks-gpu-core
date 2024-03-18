@@ -246,6 +246,8 @@ Context::Context(const Parameter &param)
     Append(inv_power_of_roots_vec, inv_power_of_roots_div_two);
     Append(inv_power_of_roots_shoup_vec, inv_power_of_roots_shoup);
   }
+  power_of_roots_host__ = power_of_roots_vec;
+  inv_power_of_roots_host__ = inv_power_of_roots_vec;
   barret_ratio__ = DeviceVector(barret_ratio);
   barret_k__ = DeviceVector(barret_k);
   power_of_roots__ = DeviceVector(power_of_roots_vec);
@@ -265,14 +267,14 @@ void Context::GenEncodeParams(){
   int Nh = degree__ >> 1;
   int M = degree__ << 1;
 
-  rotGroup = new uint64_t[Nh];
+  rotGroup = HostVector(Nh);
   uint64_t fivePows = 1;
   for (int i = 0; i < Nh; i++) {
     rotGroup[i] = fivePows;
     fivePows = (fivePows * 5) % (degree__ << 1);
   }
 
-  ksiPows = new std::complex<double>[M + 1];
+  ksiPows = new std::complex<double>[M + 1]();
   for (int i = 0; i < M; i++) {
     double theta = 2 * M_PI * i / M;
     ksiPows[i] = std::complex<double>(cos(theta), sin(theta));
@@ -327,7 +329,7 @@ void Context::GenModDownParams() {
   }
 }
 
-// https://github.com/KyoohyungHan/FullRNS-HEAAN.git
+// from https://github.com/KyoohyungHan/FullRNS-HEAAN.git
 void Context::arrayBitReverse(std::complex<double>* vals, const long size) const {
 	for (long i = 1, j = 0; i < size; ++i) {
 		long bit = size >> 1;
@@ -343,7 +345,7 @@ void Context::arrayBitReverse(std::complex<double>* vals, const long size) const
 	}
 }
 
-// https://github.com/KyoohyungHan/FullRNS-HEAAN.git
+// from https://github.com/KyoohyungHan/FullRNS-HEAAN.git
 void Context::fftSpecial(std::complex<double> *vals, const long size) const{
   uint64_t M = degree__ << 1;
   arrayBitReverse(vals, size);
@@ -363,7 +365,7 @@ void Context::fftSpecial(std::complex<double> *vals, const long size) const{
 	}
 }  
 
-// https://github.com/KyoohyungHan/FullRNS-HEAAN.git
+// from https://github.com/KyoohyungHan/FullRNS-HEAAN.git
 void Context::fftSpecialInv(std::complex<double> *vals, const long size) const{
   uint64_t M = degree__ << 1;
   for (long len = size; len >= 1; len >>= 1) {
@@ -386,8 +388,119 @@ void Context::fftSpecialInv(std::complex<double> *vals, const long size) const{
     vals[i] /= size;
   }
 }
-  
-// https://github.com/KyoohyungHan/FullRNS-HEAAN.git
+
+// from https://github.com/KyoohyungHan/FullRNS-HEAAN.git
+void Context::sampleZO(uint64_t* res, long l) const{
+	for (long i = 0; i < degree__; ++i) {
+		long zo = (rand() % 2) == 0 ? 0 : (rand() % 2) ? 1 : -1;
+		for (long j = 0; j < l; ++j) {
+			uint64_t* resj = res + (j << param__.log_degree_);
+			resj[i] = zo >= 0 ? zo : param__.primes_[j] + zo;
+		}
+	}
+}
+
+// from https://github.com/KyoohyungHan/FullRNS-HEAAN.git
+void Context::sampleGauss(uint64_t* res, long l) const {
+  double sigma = 3.2;
+	static long const bignum = 0xfffffff;
+	for (long i = 0; i < degree__; i += 2) {
+		double r1 = (1 + (uint64_t)rand() % bignum) / ((double) bignum + 1);
+		double r2 = (1 + (uint64_t)rand() % bignum) / ((double) bignum + 1);
+		double theta = 2 * M_PI * r1;
+		double rr = sqrt(-2.0 * log(r2)) * sigma;
+
+		long g1 = floor(rr * cos(theta) + 0.5);
+		long g2 = floor(rr * sin(theta) + 0.5);
+
+		for (long j = 0; j < l; ++j) {
+			uint64_t* resj = res + (j << param__.log_degree_);
+			resj[i] = g1 >= 0 ? g1 : param__.primes_[j] + g1;
+			resj[i + 1] = g2 >= 0 ? g2 : param__.primes_[j] + g2;
+		}
+	}
+}
+
+// from https://github.com/KyoohyungHan/FullRNS-HEAAN.git
+void Context::sampleHWT(uint64_t* res, long l) const {
+	long idx = 0;
+  int h = 64;
+	while (idx < h) {
+		long i = ((double) rand() / (RAND_MAX)) * degree__;
+		if (res[i] == 0) {
+			long hwt = (rand() % 2) ? 1 : -1;
+			for (long j = 0; j < l; ++j) {
+				uint64_t* resj = res + (j << param__.log_degree_);
+				resj[i] = hwt >= 0 ? hwt : param__.primes_[j] + hwt;
+			}
+			idx++;
+		}
+	}
+}
+
+// from https://github.com/KyoohyungHan/FullRNS-HEAAN.git
+void Context::sampleUniform(uint64_t* res, long l) const {
+  for (long j = 0; j < l; ++j) {
+		uint64_t* resj = res + (j << param__.log_degree_);
+		for (long n = 0; n < degree__; ++n) {
+			resj[n] = floor(((double) rand() / (RAND_MAX)) * param__.primes_[j]);
+		}
+	}
+}
+
+void Context::add(HostVector &res, const HostVector &a, const HostVector &b, const long l) const{
+  for (long i = 0; i < l; i++){
+    uint64_t p = param__.primes_[i];
+    for (long j = 0; j < degree__; j++){
+      int idx =  i * degree__ + j;
+      res[idx] = (a[idx] + b[idx]) % p;
+    }
+  }
+} 
+
+void Context::sub(HostVector &res, const HostVector &a, const HostVector &b, const long l) const{
+  for (long i = 0; i < l; i++){
+    uint64_t p = param__.primes_[i];
+    for (long j = 0; j < degree__; j++){
+      int idx = i * degree__ + j;
+      res[idx] = (a[idx] - b[idx] + p) % p;
+    }
+  }
+}
+
+void Context::mul(HostVector &res, const HostVector &a, const HostVector &b, const long l) const{
+  for (long i = 0; i < l; i++){
+    uint64_t p = param__.primes_[i];
+    for (long j = 0; j < degree__; j++){
+      int idx = i * degree__ + j;
+      res[idx] = MulMod(a[idx], b[idx], p);
+    }
+  }
+}
+
+// from https://github.com/KyoohyungHan/FullRNS-HEAAN.git
+void Context::AddSecretkey(){
+  secret_key__.sx = HostVector((param__.chain_length_ + param__.num_special_moduli_)<< param__.log_degree_);
+  sampleHWT(secret_key__.sx.data(), param__.chain_length_ + param__.num_special_moduli_);
+  ToNTTHost(secret_key__.sx, param__.chain_length_ + param__.num_special_moduli_);
+}
+
+// from https://github.com/KyoohyungHan/FullRNS-HEAAN.git
+void Context::AddEncryptionKey(){
+  encryption_key__.ax = HostVector(param__.chain_length_ << param__.log_degree_);
+  encryption_key__.bx = HostVector(param__.chain_length_ << param__.log_degree_);
+  HostVector ex = HostVector(param__.chain_length_ << param__.log_degree_);
+
+  sampleUniform(encryption_key__.ax.data(), param__.chain_length_);
+
+  sampleGauss(ex.data(), param__.chain_length_);
+  ToNTTHost(ex, param__.chain_length_);
+
+  mul(encryption_key__.bx, encryption_key__.ax, secret_key__.sx, param__.chain_length_);
+  sub(encryption_key__.bx, ex, encryption_key__.bx, param__.chain_length_);
+}
+
+// from https://github.com/KyoohyungHan/FullRNS-HEAAN.git
 // Note that `mvec` is overwritten.
 void Context::Encode(uint64_t *out, std::complex<double> *mvec, const int slot) const{
   // fft
@@ -411,25 +524,86 @@ void Context::Encode(uint64_t *out, std::complex<double> *mvec, const int slot) 
   }
 }
 
-// https://github.com/KyoohyungHan/FullRNS-HEAAN.git
+// from https://github.com/KyoohyungHan/FullRNS-HEAAN.git
 // Note that `a` is overwritten.
 void Context::Decode(std::complex<double> *out, uint64_t *a, const int slots) const{
   const int Nh = degree__ >> 1;
   uint64_t gap = Nh / slots;
-  
+
   uint64_t pr = param__.primes_[0];
 	uint64_t pr_2 = param__.primes_[0] / 2;
   
   // TODO: scale 
   int p = (1 << 20);
 
-	for (long j = 0, jdx = Nh, idx = 0; j < slots; ++j, jdx += gap, idx += gap) {
-		double mir = a[idx] <= pr_2 ? ((double) (a[idx]) / p) : (((double) (a[idx]) - (double) (pr)) / p);
-		double mii = a[jdx] <= pr_2 ? ((double) (a[jdx]) / p) : (((double) (a[jdx]) - (double) (pr)) / p);
-		out[j].real(mir);
-		out[j].imag(mii);
-	}
+  for (long j = 0, jdx = Nh, idx = 0; j < slots; ++j, jdx += gap, idx += gap) {
+    double mir = a[idx] <= pr_2 ? ((double) (a[idx]) / p) : (((double) (a[idx]) - (double) (pr)) / p);
+    double mii = a[jdx] <= pr_2 ? ((double) (a[jdx]) / p) : (((double) (a[jdx]) - (double) (pr)) / p);
+    out[j].real(mir);
+    out[j].imag(mii);
+  }
 	fftSpecial(out, slots);
+}
+  
+// from https://github.com/KyoohyungHan/FullRNS-HEAAN.git
+Ciphertext Context::Encrypt(std::complex<double> *mvec, const int slot){
+  HostVector pt(param__.chain_length_ << param__.log_degree_);
+  
+  // Encode
+  Encode(pt.data(), mvec, slot);
+
+  // Encrypt
+  HostVector ax(param__.chain_length_ << param__.log_degree_);
+  HostVector bx(param__.chain_length_ << param__.log_degree_);
+  HostVector vx(param__.chain_length_ << param__.log_degree_);
+  HostVector ex(param__.chain_length_ << param__.log_degree_);
+
+  sampleZO(vx.data(), param__.chain_length_);
+  ToNTTHost(vx, param__.chain_length_);
+
+  mul(ax, vx, encryption_key__.ax, param__.chain_length_);
+
+  sampleGauss(ex.data(), param__.chain_length_);
+  ToNTTHost(ex, param__.chain_length_);
+
+  add(ax, ax, ex, param__.chain_length_);
+
+  mul(bx, vx, encryption_key__.bx, param__.chain_length_);
+
+  sampleGauss(ex.data(), param__.chain_length_);
+  ToNTTHost(ex, param__.chain_length_);
+
+  ToNTTHost(pt, param__.chain_length_);
+  add(bx, pt, bx, param__.chain_length_);
+  add(bx, bx, ex, param__.chain_length_); 
+
+  // Copy to device
+  Ciphertext c;
+  DeviceVector& ax_d = c.getAxDevice();
+  DeviceVector& bx_d = c.getBxDevice();
+  ax_d = DeviceVector(ax);
+  bx_d = DeviceVector(bx);
+
+  return c;
+}
+  
+// from https://github.com/KyoohyungHan/FullRNS-HEAAN.git
+std::complex<double> *Context::Decrypt(const Ciphertext& c, const int slot) const{
+  // Copy to host
+  HostVector ax(c.getAxDevice());
+  HostVector bx(c.getBxDevice());
+
+  // Decrypt
+  HostVector plaintext(degree__);
+  mul(plaintext, ax, secret_key__.sx, 1);
+  add(plaintext, plaintext, bx, 1);
+  FromNTTHost(plaintext, 1);
+
+  // Decode
+  std::complex<double> *mvec = new std::complex<double>[slot]();
+  Decode(mvec, plaintext.data(), slot);
+
+  return mvec;
 }
 
 // NTT is made up of two NTT stages. Here the 'first' means the first NTT
@@ -955,6 +1129,18 @@ void Context::ToNTTInplaceFused(DeviceVector &op1, const DeviceVector &op2,
       power_of_roots_shoup__.data(), primes__.data(), op2.data(),
       epilogue.data(), epilogue_.data());
   CudaCheckError();
+}
+
+void Context::ToNTTHost(HostVector &a, long l)const {
+  DeviceVector a_d(a);
+  ToNTTInplace(a_d.data(), 0, l);
+  a_d.copyTo(a);
+}
+
+void Context::FromNTTHost(HostVector &a, long l)const {
+  DeviceVector a_d(a);
+  FromNTTInplace(a_d.data(), 0, l);
+  a_d.copyTo(a);
 }
 
 __global__ void sumAndReduceFused(const word64 *modup_out, const int degree,
