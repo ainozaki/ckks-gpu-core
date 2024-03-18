@@ -8,7 +8,6 @@
 
 #include <tuple>
 
-#include "Context.h"
 #include "Define.h"
 #include "DeviceVector.h"
 #include "Parameter.h"

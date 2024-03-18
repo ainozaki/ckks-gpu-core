@@ -38,13 +38,6 @@ auto MulMod(const word64 a, const word64 b, const word64 p) {
   return r;
 }
 
-uint64_t addMod(uint64_t a, uint64_t b, uint64_t m) {
-  if (a + b < a) {
-    return (a - (m - b)) % m;
-  }
-  return (a + b) % m;
-}
-
 // from https://github.com/snucrypto/HEAAN, 131d275
 uint64_t powMod(uint64_t x, uint64_t y, uint64_t modulus) {
   uint64_t res = 1;
@@ -455,28 +448,12 @@ void Context::sampleUniform(uint64_t* res, long l) const {
 	}
 }
 
-uint64_t inv(uint64_t x) {
-	return pow(x, static_cast<uint64_t>(-1));
-}
-
-uint64_t pow(uint64_t x, uint64_t y) {
-	uint64_t res = 1;
-	while (y > 0) {
-		if (y & 1) {
-			res *= x;
-		}
-		y = y >> 1;
-		x *= x;
-	}
-	return res;
-}
-
 void Context::add(HostVector &res, const HostVector &a, const HostVector &b, const long l) const{
   for (long i = 0; i < l; i++){
     uint64_t p = param__.primes_[i];
     for (long j = 0; j < degree__; j++){
       int idx =  i * degree__ + j;
-      res[idx] = addMod(a[idx], b[idx], p);
+      res[idx] = (a[idx] + b[idx]) % p;
     }
   }
 } 
@@ -552,12 +529,12 @@ void Context::Encode(uint64_t *out, std::complex<double> *mvec, const int slot) 
 void Context::Decode(std::complex<double> *out, uint64_t *a, const int slots) const{
   const int Nh = degree__ >> 1;
   uint64_t gap = Nh / slots;
-  
-  // TODO: scale 
-  int p = (1 << 20);
 
   uint64_t pr = param__.primes_[0];
 	uint64_t pr_2 = param__.primes_[0] / 2;
+  
+  // TODO: scale 
+  int p = (1 << 20);
 
   for (long j = 0, jdx = Nh, idx = 0; j < slots; ++j, jdx += gap, idx += gap) {
     double mir = a[idx] <= pr_2 ? ((double) (a[idx]) / p) : (((double) (a[idx]) - (double) (pr)) / p);
