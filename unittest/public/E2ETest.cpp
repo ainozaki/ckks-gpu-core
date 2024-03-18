@@ -142,5 +142,65 @@ TEST_P(E2ETest, Add){
   COMPARE_APPROXIMATE(mvec_ref, mvec_decoded, slots);
 }
 
+TEST_P(E2ETest, Mult){
+  int slots = 8;
+  std::complex<double> *mvec_a = new std::complex<double>[slots];
+  std::complex<double> *mvec_b = new std::complex<double>[slots];
+  std::complex<double> *mvec_ref = new std::complex<double>[slots];
+  
+  for (int i = 0; i < slots; i++) {
+    mvec_a[i] = std::complex<double>(i, i);
+    mvec_b[i] = std::complex<double>(i, i);
+    mvec_ref[i] = mvec_a[i] * mvec_b[i];
+  }
+
+  // encrypt and encode
+  context.AddSecretkey();
+  context.AddEncryptionKey();
+  ckks::Ciphertext ctx = context.Encrypt(mvec_a, slots);
+  ckks::Ciphertext cty = context.Encrypt(mvec_b, slots);
+  
+  // HMult operations
+  ckks::Ciphertext ctout;
+  ckks::DeviceVector axax, bxbx, axbx1, axbx2, sum_ax, sum_bx;
+  
+  // Mult
+  context.HadamardMult(ctx.getAxDevice(), cty.getAxDevice(), axax);
+  context.HadamardMult(ctx.getBxDevice(), cty.getBxDevice(), bxbx);
+  context.Add(ctx.getAxDevice(), ctx.getBxDevice(), axbx1);
+  context.Add(cty.getAxDevice(), cty.getBxDevice(), axbx2);
+  context.HadamardMult(axbx1, axbx2, axbx1);
+
+  // iNTT + ModUp
+  ckks::DeviceVector modup = context.ModUp(axax);
+
+  // NTT
+  context.ToNTTInplace(modup.data(), 0, param.chain_length_ + param.num_special_moduli_);
+
+  // KeySwitch
+  // TODO: key
+  auto key = GetRandomKey();
+  context.KeySwitch(modup, key, sum_ax, sum_bx);
+
+  // iNTT + ModDown
+  context.ModDown(sum_ax, sum_ax, param.chain_length_);
+  context.ModDown(sum_bx, sum_bx, param.chain_length_);
+
+  // NTT
+  context.ToNTTInplace(sum_ax.data(), 0, sum_ax.size() / param.degree_);
+  context.ToNTTInplace(sum_bx.data(), 0, sum_bx.size() / param.degree_);
+
+  // sum
+  context.Add(sum_ax, axbx1, sum_ax);
+  context.Add(sum_ax, bxbx, sum_ax);
+  context.Add(sum_ax, axax, ctout.getAxDevice());
+  context.Add(sum_bx, bxbx, ctout.getBxDevice());
+
+  // decrypt and decode
+  std::complex<double> *mvec_decoded = context.Decrypt(ctout, slots);
+
+  COMPARE_APPROXIMATE(mvec_ref, mvec_decoded, slots);
+}
+
 INSTANTIATE_TEST_SUITE_P(Params, E2ETest,
                          ::testing::Values(PARAM_LARGE_DNUM, PARAM_SMALL_DNUM));
