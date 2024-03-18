@@ -480,9 +480,10 @@ void Context::mul(HostVector &res, const HostVector &a, const HostVector &b, con
 
 // from https://github.com/KyoohyungHan/FullRNS-HEAAN.git
 void Context::AddSecretkey(){
-  secret_key__.sx = HostVector((param__.chain_length_ + param__.num_special_moduli_)<< param__.log_degree_);
-  sampleHWT(secret_key__.sx.data(), param__.chain_length_ + param__.num_special_moduli_);
-  ToNTTHost(secret_key__.sx, param__.chain_length_ + param__.num_special_moduli_);
+  int max_num_moduli = param__.max_num_moduli_;
+  secret_key__.sx = HostVector(max_num_moduli << param__.log_degree_);
+  sampleHWT(secret_key__.sx.data(), max_num_moduli);
+  ToNTTHost(secret_key__.sx, max_num_moduli);
 }
 
 // from https://github.com/KyoohyungHan/FullRNS-HEAAN.git
@@ -498,6 +499,35 @@ void Context::AddEncryptionKey(){
 
   mul(encryption_key__.bx, encryption_key__.ax, secret_key__.sx, param__.chain_length_);
   sub(encryption_key__.bx, ex, encryption_key__.bx, param__.chain_length_);
+}
+
+// from https://github.com/KyoohyungHan/FullRNS-HEAAN.git
+void Context::AddMultKey(){
+  int logN = param__.log_degree_;
+  int max_num_moduli = param__.max_num_moduli_;
+  HostVector ex = HostVector(max_num_moduli << logN);
+  HostVector ax = HostVector(max_num_moduli << logN);
+  HostVector bx = HostVector(max_num_moduli << logN);
+  HostVector sxsx = HostVector(max_num_moduli << logN);
+
+  for (int i = 0; i < param__.dnum_; i++){
+    mul(sxsx, secret_key__.sx, secret_key__.sx, max_num_moduli);
+
+    // evalAndEqual
+
+    sampleGauss(ex.data(), max_num_moduli);
+    ToNTTHost(ex, max_num_moduli);
+
+    add(ex, sxsx, ex, max_num_moduli);
+
+    sampleUniform(ax.data(), max_num_moduli);
+    mul(bx, ax, secret_key__.sx, max_num_moduli);
+    sub(bx, ex, bx, max_num_moduli);
+
+    // Copy to device
+    evaluation_key__.getAxDevice().append(DeviceVector(ax));
+    evaluation_key__.getBxDevice().append(DeviceVector(bx));
+  }
 }
 
 // from https://github.com/KyoohyungHan/FullRNS-HEAAN.git

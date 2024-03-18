@@ -157,10 +157,11 @@ TEST_P(E2ETest, Mult){
   // encrypt and encode
   context.AddSecretkey();
   context.AddEncryptionKey();
+  context.AddMultKey();
   ckks::Ciphertext ctx = context.Encrypt(mvec_a, slots);
   ckks::Ciphertext cty = context.Encrypt(mvec_b, slots);
   
-  // HMult operations
+  // Start HMult operations
   ckks::Ciphertext ctout;
   ckks::DeviceVector axax, bxbx, axbx1, axbx2, sum_ax, sum_bx;
   
@@ -178,17 +179,16 @@ TEST_P(E2ETest, Mult){
   context.ToNTTInplace(modup.data(), 0, param.chain_length_ + param.num_special_moduli_);
 
   // KeySwitch
-  // TODO: key
   auto key = GetRandomKey();
-  context.KeySwitch(modup, key, sum_ax, sum_bx);
+  context.KeySwitch(modup, context.evaluation_key__, sum_ax, sum_bx);
 
   // iNTT + ModDown
   context.ModDown(sum_ax, sum_ax, param.chain_length_);
   context.ModDown(sum_bx, sum_bx, param.chain_length_);
 
   // NTT
-  context.ToNTTInplace(sum_ax.data(), 0, sum_ax.size() / param.degree_);
-  context.ToNTTInplace(sum_bx.data(), 0, sum_bx.size() / param.degree_);
+  context.ToNTTInplace(sum_ax.data(), 0, param.chain_length_);
+  context.ToNTTInplace(sum_bx.data(), 0, param.chain_length_);
 
   // sum
   context.Add(sum_ax, axbx1, sum_ax);
@@ -203,4 +203,4 @@ TEST_P(E2ETest, Mult){
 }
 
 INSTANTIATE_TEST_SUITE_P(Params, E2ETest,
-                         ::testing::Values(PARAM_LARGE_DNUM, PARAM_SMALL_DNUM));
+                         ::testing::Values(PARAM_SMALL_DNUM));

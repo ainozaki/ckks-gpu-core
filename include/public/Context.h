@@ -37,6 +37,7 @@ class Context {
   void Decode(std::complex<double> *out, uint64_t *v, const int slot) const;
   void AddSecretkey();
   void AddEncryptionKey();
+  void AddMultKey();
 
   Ciphertext Encrypt(std::complex<double> *mvec, const int slot);
   std::complex<double> *Decrypt(const Ciphertext& c, const int slot) const;
@@ -60,6 +61,7 @@ class Context {
   bool is_modup_batched = true;
   bool is_moddown_fused = true;
   bool is_keyswitch_fused = true;
+  EvaluationKey evaluation_key__;
 
  private:
   DeviceVector FromNTT(const DeviceVector& from) const;
