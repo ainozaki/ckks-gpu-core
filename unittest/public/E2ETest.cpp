@@ -114,6 +114,33 @@ TEST_P(E2ETest, NTTHost){
   COMPARE(a, a_ref);
 }
 
+TEST_P(E2ETest, Add){
+  int slots = 8;
+  std::complex<double> *mvec_a = new std::complex<double>[slots];
+  std::complex<double> *mvec_b = new std::complex<double>[slots];
+  std::complex<double> *mvec_ref = new std::complex<double>[slots];
+  
+  for (int i = 0; i < slots; i++) {
+    mvec_a[i] = std::complex<double>(i, i);
+    mvec_b[i] = std::complex<double>(i, i);
+    mvec_ref[i] = mvec_a[i] + mvec_b[i];
+  }
+
+  // encrypt and encode
+  context.AddSecretkey();
+  context.AddEncryptionKey();
+  ckks::Ciphertext ct0 = context.Encrypt(mvec_a, slots);
+  ckks::Ciphertext ct1 = context.Encrypt(mvec_b, slots);
+  
+  // some operations
+  ckks::Ciphertext ct2;
+  context.Add(ct0, ct1, ct2);
+
+  // decrypt and decode
+  std::complex<double> *mvec_decoded = context.Decrypt(ct2, slots);
+
+  COMPARE_APPROXIMATE(mvec_ref, mvec_decoded, slots);
+}
 
 INSTANTIATE_TEST_SUITE_P(Params, E2ETest,
                          ::testing::Values(PARAM_LARGE_DNUM, PARAM_SMALL_DNUM));
