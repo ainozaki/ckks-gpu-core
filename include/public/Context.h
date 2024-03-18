@@ -37,6 +37,7 @@ class Context {
   void Decode(std::complex<double> *out, uint64_t *v, const int slot) const;
   void AddSecretkey();
   void AddEncryptionKey();
+  void AddMultKey();
 
   Ciphertext Encrypt(std::complex<double> *mvec, const int slot);
   std::complex<double> *Decrypt(const Ciphertext& c, const int slot) const;
@@ -44,7 +45,9 @@ class Context {
   void KeySwitch(const DeviceVector& modup_out, const EvaluationKey& evk,
                  DeviceVector& sum_ax, DeviceVector& sum_bx) const;
   void PMult(const Ciphertext&, const Plaintext&, Ciphertext&) const;
+  void HadamardMult(const DeviceVector&, const DeviceVector&, DeviceVector&) const;
   void Add(const Ciphertext&, const Ciphertext&, Ciphertext&) const;
+  void Add(const DeviceVector&, const DeviceVector&, DeviceVector&) const;
   DeviceVector ModUp(const DeviceVector& in) const;
   void EnableMemoryPool();
   auto GetDegree() const { return degree__; }
@@ -52,10 +55,13 @@ class Context {
                long target_chain_idx) const;
   void FromNTTHost(HostVector &a, long l) const;
   void ToNTTHost(HostVector &a, long l) const;
+  void FromNTTInplace(word64* op1, int start_prime_idx, int batch) const;
+  void ToNTTInplace(word64* op1, int start_prime_idx, int batch) const;
   
   bool is_modup_batched = true;
   bool is_moddown_fused = true;
   bool is_keyswitch_fused = true;
+  EvaluationKey evaluation_key__;
 
  private:
   DeviceVector FromNTT(const DeviceVector& from) const;
@@ -75,8 +81,6 @@ class Context {
   void FromNTTInplace(DeviceVector& op1, int start_prime_idx, int batch) const {
     FromNTTInplace(op1.data(), start_prime_idx, batch);
   }
-  void FromNTTInplace(word64* op1, int start_prime_idx, int batch) const;
-  void ToNTTInplace(word64* op1, int start_prime_idx, int batch) const;
   void ToNTTInplaceFused(DeviceVector& op1, const DeviceVector& op2,
                          const DeviceVector& epilogue,
                          const DeviceVector& epilogue_) const;

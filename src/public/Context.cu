@@ -480,9 +480,10 @@ void Context::mul(HostVector &res, const HostVector &a, const HostVector &b, con
 
 // from https://github.com/KyoohyungHan/FullRNS-HEAAN.git
 void Context::AddSecretkey(){
-  secret_key__.sx = HostVector((param__.chain_length_ + param__.num_special_moduli_)<< param__.log_degree_);
-  sampleHWT(secret_key__.sx.data(), param__.chain_length_ + param__.num_special_moduli_);
-  ToNTTHost(secret_key__.sx, param__.chain_length_ + param__.num_special_moduli_);
+  int max_num_moduli = param__.max_num_moduli_;
+  secret_key__.sx = HostVector(max_num_moduli << param__.log_degree_);
+  sampleHWT(secret_key__.sx.data(), max_num_moduli);
+  ToNTTHost(secret_key__.sx, max_num_moduli);
 }
 
 // from https://github.com/KyoohyungHan/FullRNS-HEAAN.git
@@ -498,6 +499,35 @@ void Context::AddEncryptionKey(){
 
   mul(encryption_key__.bx, encryption_key__.ax, secret_key__.sx, param__.chain_length_);
   sub(encryption_key__.bx, ex, encryption_key__.bx, param__.chain_length_);
+}
+
+// from https://github.com/KyoohyungHan/FullRNS-HEAAN.git
+void Context::AddMultKey(){
+  int logN = param__.log_degree_;
+  int max_num_moduli = param__.max_num_moduli_;
+  HostVector ex = HostVector(max_num_moduli << logN);
+  HostVector ax = HostVector(max_num_moduli << logN);
+  HostVector bx = HostVector(max_num_moduli << logN);
+  HostVector sxsx = HostVector(max_num_moduli << logN);
+
+  for (int i = 0; i < param__.dnum_; i++){
+    mul(sxsx, secret_key__.sx, secret_key__.sx, max_num_moduli);
+
+    // evalAndEqual
+
+    sampleGauss(ex.data(), max_num_moduli);
+    ToNTTHost(ex, max_num_moduli);
+
+    add(ex, sxsx, ex, max_num_moduli);
+
+    sampleUniform(ax.data(), max_num_moduli);
+    mul(bx, ax, secret_key__.sx, max_num_moduli);
+    sub(bx, ex, bx, max_num_moduli);
+
+    // Copy to device
+    evaluation_key__.getAxDevice().append(DeviceVector(ax));
+    evaluation_key__.getBxDevice().append(DeviceVector(bx));
+  }
 }
 
 // from https://github.com/KyoohyungHan/FullRNS-HEAAN.git
@@ -1328,6 +1358,29 @@ __global__ void hadamardMultFused_(size_t degree, size_t log_degree,
                                    barret_k[prime_idx]);
 }
 
+// op1  * op2
+__global__ void hadamardMult_(size_t degree, size_t log_degree,
+                              size_t num_primes, const uint64_t* primes,
+                              const uint64_t* barret_ratio,
+                              const uint64_t* barret_k, 
+                              const uint64_t* op1, const uint64_t* op2, uint64_t* out) { 
+  const int i = blockIdx.x * blockDim.x + threadIdx.x;
+  const int prime_idx = i >> log_degree;
+  const uint64_t prime = primes[prime_idx];
+  uint128_t out_ = mult_64_64_128(op1[i], op2[i]);
+  out[i] = barret_reduction_128_64(out_, prime, barret_ratio[prime_idx],
+                                   barret_k[prime_idx]);
+}
+
+void Context::HadamardMult(const DeviceVector &op1, const DeviceVector &op2,
+                           DeviceVector &out) const {
+  if (op1.size() != op2.size()) throw std::logic_error("Size does not match");
+  out.resize(op1.size());
+  int num_primes = op1.size() / degree__;
+  hadamardMult_<<<degree__ * num_primes / 256, 256>>>(
+      degree__, param__.log_degree_, num_primes, primes__.data(), barret_ratio__.data(),
+      barret_k__.data(), op1.data(), op2.data(), out.data());
+}
 
 void Context::PMult(const Ciphertext &ct, const Plaintext &pt,
                     Ciphertext &out) const {
@@ -1376,6 +1429,17 @@ void Context::Add(const Ciphertext &ct1, const Ciphertext &ct2,
                                 op2_ax.data(), out_ax.data());
   add_<<<gridDim_, blockDim_>>>(GetKernelParams(), length, op1_bx.data(),
                                 op2_bx.data(), out_bx.data());
+}
+
+void Context::Add(const DeviceVector &op1, const DeviceVector &op2,
+                  DeviceVector &out) const {
+  if (op1.size() != op2.size()) throw std::logic_error("Size does not match");
+  out.resize(op1.size());
+  const int length = op1.size() / degree__;
+  int gridDim_ = 2048;
+  int blockDim_ = 256;
+  add_<<<gridDim_, blockDim_>>>(GetKernelParams(), length, op1.data(),
+                                op2.data(), out.data());
 }
 
 void Context::EnableMemoryPool() {
