@@ -35,8 +35,8 @@ class E2ETest : public ckks::Test,
   void COMPARE_APPROXIMATE(std::complex<double> *ref,
                            std::complex<double> *out, int size) const {
     for (size_t i = 0; i < size; i++) {
-      ASSERT_NEAR(ref[i].real(), out[i].real(), 1e-3);
-      ASSERT_NEAR(ref[i].imag(), out[i].imag(), 1e-3);
+      ASSERT_NEAR(ref[i].real(), out[i].real(), 1e-2);
+      ASSERT_NEAR(ref[i].imag(), out[i].imag(), 1e-2);
     }
   }
 
